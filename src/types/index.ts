@@ -49,3 +49,32 @@ export interface ScrapingTarget {
   authConfig: any;
   sourceFilters: string[]; // source IDs to include
 }
+
+// Database types
+export interface DatabaseSource {
+  id: string;
+  name: string;
+  domain: string;
+  theme: string;
+  isActive: boolean | null;
+  scanInterval: number | null;
+  proxyConfig: unknown;
+  categoryFilters: unknown;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+}
+
+// Fastify type extensions
+declare module 'fastify' {
+  interface FastifyInstance {
+    scrapingService: any;
+    schedulerService: any;
+  }
+}
+
+// Madara theme specific types
+export interface Madara_Object {
+  ajaxurl: string;
+  nonce: string;
+  [key: string]: any;
+}

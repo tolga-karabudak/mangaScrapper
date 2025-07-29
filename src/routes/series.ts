@@ -9,17 +9,21 @@ export async function seriesRoutes(fastify: FastifyInstance) {
     const { page = 1, limit = 20, search = '' } = request.query;
     const offset = (page - 1) * limit;
 
-    let query = db.select().from(series);
+    // Build base query
+    const baseQuery = db.select().from(series);
+    
+    // Apply search filter
+    const filteredQuery = search 
+      ? baseQuery.where(like(series.name, `%${search}%`))
+      : baseQuery;
 
-    if (search) {
-      query = query.where(like(series.name, `%${search}%`));
-    }
-
-    const result = await query
+    // Execute query with pagination
+    const result = await filteredQuery
       .orderBy(desc(series.lastUpdated))
       .limit(limit)
       .offset(offset);
 
+    // Get total count
     const totalQuery = db.select({ count: sql<number>`count(*)` }).from(series);
     const total = search 
       ? await totalQuery.where(like(series.name, `%${search}%`))

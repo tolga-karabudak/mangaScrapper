@@ -228,7 +228,21 @@ export class ScrapingService {
       .where(eq(sources.id, sourceId))
       .limit(1);
 
-    return result[0] || null;
+    if (result.length === 0) return null;
+
+    const source = result[0];
+    
+    // Type assertion to ensure theme is properly typed
+    return {
+      id: source.id,
+      name: source.name,
+      domain: source.domain,
+      theme: source.theme as 'themesia' | 'madara' | 'uzay',
+      isActive: source.isActive ?? false,
+      scanInterval: source.scanInterval ?? 60,
+      proxyConfig: source.proxyConfig as ScrapingSource['proxyConfig'],
+      categoryFilters: source.categoryFilters as ScrapingSource['categoryFilters']
+    };
   }
 
   // Public methods for manual operations

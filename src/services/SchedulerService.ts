@@ -1,4 +1,4 @@
-import cron from 'node-cron';
+import * as cron from 'node-cron';
 import { ScrapingService } from './ScrapingService';
 import { db } from '../config/database';
 import { sources } from '../config/schema';
@@ -18,7 +18,9 @@ export class SchedulerService {
       .where(eq(sources.isActive, true));
 
     for (const source of activeSources) {
-      this.scheduleSourceScraping(source.id, source.scanInterval);
+      if (source.scanInterval) {
+        this.scheduleSourceScraping(source.id, source.scanInterval);
+      }
     }
 
     console.log(`Initialized ${activeSources.length} scheduled scraping tasks`);
