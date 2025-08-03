@@ -64,14 +64,6 @@ export interface DatabaseSource {
   updatedAt: Date | null;
 }
 
-// Fastify type extensions
-declare module 'fastify' {
-  interface FastifyInstance {
-    scrapingService: any;
-    schedulerService: any;
-  }
-}
-
 // Madara theme specific types
 export interface Madara_Object {
   ajaxurl: string;

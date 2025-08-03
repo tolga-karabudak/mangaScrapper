@@ -1,8 +1,8 @@
+import 'dotenv/config'; // .env dosyasını en başta yükle
 import Fastify from 'fastify';
 import { ScrapingService } from './services/ScrapingService';
 import { SchedulerService } from './services/SchedulerService';
 import { setupRoutes } from './routes';
-import { db } from './config/database';
 
 const fastify = Fastify({
   logger: true
@@ -34,8 +34,9 @@ async function startServer() {
     await schedulerService.initializeSchedules();
 
     // Start server
-    await fastify.listen({ port: 3000, host: '0.0.0.0' });
-    console.log('🚀 Server is running on http://localhost:3000');
+    const port = parseInt(process.env.PORT || '3000');
+    await fastify.listen({ port, host: '0.0.0.0' });
+    console.log(`🚀 Server is running on http://localhost:${port}`);
 
   } catch (error) {
     fastify.log.error(error);
