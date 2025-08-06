@@ -1,7 +1,7 @@
 // src/services/ImageStorageService.ts
 import { createHash } from 'crypto';
 import { mkdir, writeFile, access, stat, unlink } from 'fs/promises';
-import { join, extname, dirname } from 'path';
+import { join, extname, dirname, resolve } from 'path';
 import sharp from 'sharp';
 import type { ImageStorageResult, ImageStorageOptions } from '../types';
 
@@ -10,7 +10,16 @@ export class ImageStorageService {
   private maxFileSizeMB: number;
 
   constructor() {
-    this.storageDir = join(process.cwd(), 'storage', 'images');
+    // Use environment variable or fallback to default
+    const storagePath = process.env.STORAGE_PATH || './storage';
+    
+    // Handle Windows paths properly
+    if (process.platform === 'win32' && storagePath.includes('\\')) {
+      this.storageDir = resolve(storagePath, 'images');
+    } else {
+      this.storageDir = join(storagePath, 'images');
+    }
+    
     this.maxFileSizeMB = 10; // Maximum 10MB per image
     this.ensureStorageDir();
   }
@@ -21,6 +30,54 @@ export class ImageStorageService {
       console.log(`📁 Storage directory ensured: ${this.storageDir}`);
     } catch (error) {
       console.error('❌ Error creating storage directory:', error);
+    }
+  }
+
+  /**
+   * Get storage directory info
+   */
+  getStorageInfo(): { path: string; platform: string } {
+    return {
+      path: this.storageDir,
+      platform: process.platform
+    };
+  }
+
+  /**
+   * Get local image path for serving
+   */
+  getLocalImagePath(relativePath: string): string {
+    return join(this.storageDir, relativePath);
+  }
+
+  /**
+   * Check if local image exists
+   */
+  async imageExists(relativePath: string): Promise<boolean> {
+    const fullPath = this.getLocalImagePath(relativePath);
+    return this.fileExists(fullPath);
+  }
+
+  /**
+   * Get image file size
+   */
+  async getImageSize(relativePath: string): Promise<number> {
+    const fullPath = this.getLocalImagePath(relativePath);
+    return this.getFileSize(fullPath);
+  }
+
+  /**
+   * Delete local image
+   */
+  async deleteImage(relativePath: string): Promise<void> {
+    const fullPath = this.getLocalImagePath(relativePath);
+    try {
+      await unlink(fullPath);
+      console.log(`🗑️ Deleted image: ${relativePath}`);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+        throw error;
+      }
     }
   }
 
@@ -37,6 +94,8 @@ export class ImageStorageService {
 
     const fileName = `cover.webp`;
     const localPath = join(seriesDir, fileName);
+    
+    // Use forward slashes for relative paths regardless of platform
     const relativePath = `series/${seriesId}/${fileName}`;
 
     return this.downloadAndProcessImage(imageUrl, localPath, relativePath, {
@@ -65,6 +124,8 @@ export class ImageStorageService {
       const imageUrl = imageUrls[i];
       const fileName = `${String(i + 1).padStart(3, '0')}.webp`; // 001.webp, 002.webp, etc.
       const localPath = join(episodeDir, fileName);
+      
+      // Use forward slashes for relative paths regardless of platform
       const relativePath = `series/${seriesId}/episodes/${episodeId}/${fileName}`;
 
       try {
@@ -180,49 +241,11 @@ export class ImageStorageService {
 
     // Always convert to WebP for optimization
     processor = processor.webp({ 
-      quality: options.shouldOptimize ? 85 : 95,
+      quality: options.shouldOptimize ? 80 : 95,
       effort: 4 // Good balance between compression and speed
     });
 
     return await processor.toBuffer();
-  }
-
-  /**
-   * Get local image path for serving
-   */
-  getLocalImagePath(relativePath: string): string {
-    return join(this.storageDir, relativePath);
-  }
-
-  /**
-   * Check if local image exists
-   */
-  async imageExists(relativePath: string): Promise<boolean> {
-    const fullPath = this.getLocalImagePath(relativePath);
-    return this.fileExists(fullPath);
-  }
-
-  /**
-   * Get image file size
-   */
-  async getImageSize(relativePath: string): Promise<number> {
-    const fullPath = this.getLocalImagePath(relativePath);
-    return this.getFileSize(fullPath);
-  }
-
-  /**
-   * Delete local image
-   */
-  async deleteImage(relativePath: string): Promise<void> {
-    const fullPath = this.getLocalImagePath(relativePath);
-    try {
-      await unlink(fullPath);
-      console.log(`🗑️ Deleted image: ${relativePath}`);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-        throw error;
-      }
-    }
   }
 
   /**

@@ -7,12 +7,12 @@ import { ImageStorageService } from '../services/ImageStorageService';
 
 export async function imageRoutes(fastify: FastifyInstance) {
   const imageStorage = new ImageStorageService();
-  const storageDir = join(process.cwd(), 'storage', 'images');
+  const storageInfo = imageStorage.getStorageInfo();
 
   // Serve static images with fallback mechanism
   fastify.get('/storage/images/*', async (request: any, reply: any) => {
     const imagePath = request.params['*'] as string;
-    const fullPath = join(storageDir, imagePath);
+    const fullPath = imageStorage.getLocalImagePath(imagePath);
 
     try {
       // Check if local image exists
@@ -50,70 +50,53 @@ export async function imageRoutes(fastify: FastifyInstance) {
   });
 
   // Image metadata endpoint
-  fastify.get('/api/images/metadata/:type/:seriesId/:episodeId?', async (request: any) => {
+  fastify.get('/api/images/metadata/:type/:seriesId/:episodeId?', async (request: any, reply: any) => {
     const { type, seriesId, episodeId } = request.params;
-
+    
     try {
-      if (type === 'cover' && !episodeId) {
-        // Series cover metadata
-        const coverPath = `series/${seriesId}/cover.webp`;
-        const exists = await imageStorage.imageExists(coverPath);
-        
-        if (exists) {
-          const size = await imageStorage.getImageSize(coverPath);
-          return {
-            type: 'cover',
-            seriesId,
-            localPath: coverPath,
-            exists: true,
-            fileSize: size,
-            url: `/storage/images/${coverPath}`
-          };
-        }
-        
-        return {
-          type: 'cover',
-          seriesId,
-          exists: false
-        };
-      } 
+      let imagePath: string;
       
-      if (type === 'episode' && episodeId) {
-        // Episode images metadata
-        const episodeDir = `series/${seriesId}/episodes/${episodeId}`;
-        
-        // This would need a method to list episode images
-        return {
-          type: 'episode',
-          seriesId,
-          episodeId,
-          message: 'Episode images metadata - implementation needed'
+      if (type === 'cover') {
+        imagePath = `series/${seriesId}/cover.webp`;
+      } else if (type === 'episode' && episodeId) {
+        // Return metadata for all episode images
+        const episodePath = `series/${seriesId}/episodes/${episodeId}`;
+        // This would need implementation to scan directory
+        return { 
+          message: 'Episode image metadata not implemented yet',
+          path: episodePath
         };
+      } else {
+        return reply.code(400).send({ error: 'Invalid image type or missing episodeId' });
       }
 
-      return { error: 'Invalid parameters' };
+      const exists = await imageStorage.imageExists(imagePath);
+      if (!exists) {
+        return reply.code(404).send({ error: 'Image not found', path: imagePath });
+      }
+
+      const fileSize = await imageStorage.getImageSize(imagePath);
+      
+      return {
+        exists: true,
+        path: imagePath,
+        size: fileSize,
+        url: `/storage/images/${imagePath}`
+      };
     } catch (error) {
-      return { error: 'Failed to get image metadata' };
+      return reply.code(500).send({ 
+        error: 'Failed to get image metadata',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   });
 
-  // Health check for image storage
-  fastify.get('/api/images/health', async () => {
-    try {
-      // Check if storage directory is accessible
-      await access(storageDir);
-      
-      return {
-        status: 'healthy',
-        storageDir,
-        timestamp: new Date().toISOString()
-      };
-    } catch (error) {
-      return {
-        status: 'unhealthy',
-        error: 'Storage directory not accessible',
-        storageDir
-      };
-    }
+  // Storage info endpoint
+  fastify.get('/api/images/storage-info', async () => {
+    return {
+      storage: storageInfo,
+      supportedFormats: ['webp'],
+      maxFileSize: '10MB'
+    };
   });
 }

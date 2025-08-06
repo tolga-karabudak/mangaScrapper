@@ -1,8 +1,6 @@
 // src/services/ImageProcessingService.ts - Updated with local storage integration
 import sharp from 'sharp';
 import { createHash } from 'crypto';
-import { mkdir, writeFile } from 'fs/promises';
-import { join } from 'path';
 import { ImageStorageService } from './ImageStorageService';
 import type { ImageStorageResult } from '../types';
 
@@ -105,6 +103,13 @@ export class ImageProcessingService {
    */
   async deleteImage(localPath: string): Promise<void> {
     return this.storageService.deleteImage(localPath);
+  }
+
+  /**
+   * Get storage service instance
+   */
+  getStorageService(): ImageStorageService {
+    return this.storageService;
   }
 
   /**
