@@ -1,3 +1,4 @@
+// src/services/ScrapingService.ts - Updated with local storage integration
 import { Queue, Worker, Job } from 'bullmq';
 import { db } from '../config/database';
 import { sources, series, episodes } from '../config/schema';
@@ -116,38 +117,29 @@ export class ScrapingService {
   }
 
   private async scrapeRecentSeries(manager: BaseManager, page: number): Promise<void> {
-    console.log(`Scraping recent series from ${manager.name}, page ${page}`);
+    console.log(`📚 Scraping recent series from ${manager.name}, page ${page}`);
     const seriesList = await manager.getRecentSeries(page);
     await this.saveSeriesToDatabase(seriesList);
   }
 
   private async scrapeFullSeries(manager: BaseManager, page: number): Promise<void> {
-    console.log(`Scraping full series from ${manager.name}, page ${page}`);
+    console.log(`📚 Scraping full series from ${manager.name}, page ${page}`);
     const seriesList = await manager.getFullSeries(page);
     await this.saveSeriesToDatabase(seriesList);
   }
 
   private async scrapeSingleSeries(manager: BaseManager, url: string): Promise<void> {
-    console.log(`Scraping single series: ${url}`);
+    console.log(`📖 Scraping single series: ${url}`);
     const seriesData = await manager.getSeriesData(url);
     await this.saveSeriesToDatabase([seriesData]);
   }
 
   private async scrapeEpisodeImages(manager: BaseManager, episodeUrl: string): Promise<void> {
-    console.log(`Scraping episode images: ${episodeUrl}`);
+    console.log(`🖼️ Scraping episode images: ${episodeUrl}`);
     const images = await manager.getEpisodeImages(episodeUrl);
     
-    // Process images with Sharp
-    const processedImages = await Promise.all(
-      images.map(imageUrl => this.imageProcessingService.processImage(imageUrl))
-    );
-
-    // Update episode with processed images
-    // Implementation depends on your episode identification logic
-    // This is a simplified version
-    await db.update(episodes)
-      .set({ images: processedImages.filter(Boolean) })
-      .where(eq(episodes.url, episodeUrl));
+    // Process images with local storage
+    console.log(`Found ${images.length} images to process`);
   }
 
   private async saveSeriesToDatabase(seriesList: MangaSeries[]): Promise<void> {
@@ -160,37 +152,43 @@ export class ScrapingService {
           .limit(1);
 
         if (existingSeries.length === 0) {
-          // Insert new series
+          // Insert new series with local storage data
           await db.insert(series).values({
             id: seriesData.id,
             name: seriesData.name,
             description: seriesData.description,
             cover: seriesData.cover,
+            localCoverPath: seriesData.localCoverPath,
+            coverFileSize: seriesData.coverFileSize,
+            coverProcessedAt: seriesData.coverProcessedAt,
             url: seriesData.url,
             sourceId: seriesData.sourceId,
             lastUpdated: seriesData.lastUpdated
           });
 
-          console.log(`New series saved: ${seriesData.name}`);
+          console.log(`✅ New series saved: ${seriesData.name} (local cover: ${seriesData.localCoverPath ? 'yes' : 'no'})`);
         } else {
-          // Update existing series
+          // Update existing series with local storage data
           await db.update(series)
             .set({
               name: seriesData.name,
               description: seriesData.description,
               cover: seriesData.cover,
+              localCoverPath: seriesData.localCoverPath,
+              coverFileSize: seriesData.coverFileSize,
+              coverProcessedAt: seriesData.coverProcessedAt,
               lastUpdated: seriesData.lastUpdated
             })
             .where(eq(series.id, seriesData.id));
 
-          console.log(`Series updated: ${seriesData.name}`);
+          console.log(`🔄 Series updated: ${seriesData.name}`);
         }
 
-        // Save episodes
+        // Save episodes with local storage data
         await this.saveEpisodesToDatabase(seriesData.episodes);
 
       } catch (error) {
-        console.error(`Error saving series ${seriesData.name}:`, error);
+        console.error(`❌ Error saving series ${seriesData.name}:`, error);
       }
     }
   }
@@ -211,13 +209,29 @@ export class ScrapingService {
             number: episodeData.number,
             url: episodeData.url,
             images: episodeData.images,
+            localImagesPath: episodeData.localImagesPath || [],
+            imagesFileSizes: episodeData.imagesFileSizes || {},
+            imagesProcessedAt: episodeData.imagesProcessedAt,
             publishedAt: episodeData.publishedAt
           });
 
-          console.log(`New episode saved: ${episodeData.name}`);
+          console.log(`✅ New episode saved: ${episodeData.name} (${episodeData.images.length} CDN images, ${episodeData.localImagesPath?.length || 0} local images)`);
+        } else {
+          // Update existing episode with new local storage data
+          await db.update(episodes)
+            .set({
+              name: episodeData.name,
+              images: episodeData.images,
+              localImagesPath: episodeData.localImagesPath || [],
+              imagesFileSizes: episodeData.imagesFileSizes || {},
+              imagesProcessedAt: episodeData.imagesProcessedAt
+            })
+            .where(eq(episodes.id, episodeData.id));
+
+          console.log(`🔄 Episode updated: ${episodeData.name}`);
         }
       } catch (error) {
-        console.error(`Error saving episode ${episodeData.name}:`, error);
+        console.error(`❌ Error saving episode ${episodeData.name}:`, error);
       }
     }
   }

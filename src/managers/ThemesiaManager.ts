@@ -1,3 +1,4 @@
+// src/managers/ThemesiaManager.ts - Updated with image processing and local storage
 import { BaseManager } from './base/BaseManager';
 import type { MangaSeries } from '../types';
 
@@ -40,35 +41,55 @@ export class ThemesiaManager extends BaseManager {
 
     const name = document.querySelector('h1')?.textContent?.trim() || '';
     const description = document.querySelector('[itemprop="description"] p')?.textContent?.trim() || '';
-    const cover = document.querySelector('.thumb img')?.getAttribute('src') || '';
+    const coverUrl = document.querySelector('.thumb img')?.getAttribute('src') || '';
     const id = document.querySelector('.bookmark')?.getAttribute('data-id') || this.generateId(url);
+
+    // Process cover image
+    const coverResult = await this.processSeriesCover(coverUrl, id);
 
     // Get episodes
     const episodeElements = Array.from(document.querySelectorAll('#chapterlist [data-num]'));
-    const episodes = episodeElements.map(episode => {
+    const episodes: MangaSeries['episodes'] = [];
+
+    for (const episode of episodeElements) {
       const episodeName = episode.querySelector('.chapternum')?.textContent?.trim() || '';
       const episodeUrl = episode.querySelector('a')?.getAttribute('href') || '';
       const number = parseFloat(episode.getAttribute('data-num') || '-1');
 
-      return {
-        id: this.generateEpisodeId(episodeUrl),
-        seriesId: id,
-        name: episodeName,
-        number,
-        url: episodeUrl,
-        images: [],
-        publishedAt: new Date()
-      };
-    }).filter(ep => ep.number >= 0).reverse();
+      if (number >= 0 && episodeUrl) {
+        // Get episode images
+        const imageUrls = await this.getEpisodeImages(episodeUrl);
+        
+        // Process episode images
+        const episodeId = this.generateEpisodeId(episodeUrl);
+        const imageResult = await this.processEpisodeImages(imageUrls, id, episodeId);
+
+        episodes.push({
+          id: episodeId,
+          seriesId: id,
+          name: episodeName,
+          number,
+          url: episodeUrl,
+          images: imageResult.cdnUrls,
+          localImagesPath: imageResult.localPaths,
+          imagesFileSizes: imageResult.fileSizes,
+          imagesProcessedAt: imageResult.localPaths.length > 0 ? new Date() : undefined,
+          publishedAt: new Date()
+        });
+      }
+    }
 
     return {
       id,
       name,
       description,
-      cover,
+      cover: coverResult.cdnUrl,
+      localCoverPath: coverResult.localPath,
+      coverFileSize: coverResult.fileSize,
+      coverProcessedAt: coverResult.localPath ? new Date() : undefined,
       url,
       sourceId: this.source.id,
-      episodes,
+      episodes: episodes.reverse(),
       lastUpdated: new Date()
     };
   }
@@ -104,6 +125,7 @@ export class ThemesiaManager extends BaseManager {
     }
 
     if (!targetScript?.textContent) {
+      console.warn(`No images found for episode: ${episodeUrl}`);
       return [];
     }
 
@@ -115,8 +137,11 @@ export class ThemesiaManager extends BaseManager {
     if (!imagesMatch) return [];
 
     try {
-      return JSON.parse(`[${imagesMatch[0]}]`) as string[];
-    } catch {
+      const images = JSON.parse(`[${imagesMatch[0]}]`) as string[];
+      console.log(`📖 Found ${images.length} images for episode`);
+      return images;
+    } catch (error) {
+      console.error('Failed to parse episode images:', error);
       return [];
     }
   }

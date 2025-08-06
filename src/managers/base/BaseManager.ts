@@ -1,15 +1,19 @@
+// src/managers/base/BaseManager.ts - Updated with image processing
 import { BrowserContext, Page, chromium } from 'playwright';
 import { JSDOM } from 'jsdom';
-import type { ScrapingSource, MangaSeries, MangaEpisode } from '../../types';
+import { ImageProcessingService } from '../../services/ImageProcessingService';
+import type { ScrapingSource, MangaSeries, MangaEpisode, ImageStorageResult } from '../../types';
 
 export abstract class BaseManager {
   abstract name: string;
   protected context: BrowserContext | null = null;
   protected page: Page | null = null;
   protected source: ScrapingSource;
+  protected imageProcessor: ImageProcessingService;
 
   constructor(source: ScrapingSource) {
     this.source = source;
+    this.imageProcessor = new ImageProcessingService();
   }
 
   async initialize(): Promise<void> {
@@ -71,6 +75,81 @@ export abstract class BaseManager {
     const match = text.replace(/[^0-9.,]/g, ' ').trim().replace(/^[.,]*/, '');
     const number = parseFloat(match);
     return isNaN(number) ? -1 : number;
+  }
+
+  /**
+   * Process and store series cover image
+   */
+  protected async processSeriesCover(coverUrl: string, seriesId: string): Promise<{
+    cdnUrl: string;
+    localPath?: string;
+    fileSize?: number;
+  }> {
+    if (!coverUrl) {
+      return { cdnUrl: '' };
+    }
+
+    try {
+      const result = await this.imageProcessor.processSeriesCover(coverUrl, seriesId);
+      if (result && result.processed) {
+        return {
+          cdnUrl: coverUrl,
+          localPath: result.localPath,
+          fileSize: result.fileSize
+        };
+      }
+    } catch (error) {
+      console.error(`Failed to process cover for series ${seriesId}:`, error);
+    }
+
+    // Return CDN URL as fallback
+    return { cdnUrl: coverUrl };
+  }
+
+  /**
+   * Process and store episode images
+   */
+  protected async processEpisodeImages(
+    imageUrls: string[], 
+    seriesId: string, 
+    episodeId: string
+  ): Promise<{
+    cdnUrls: string[];
+    localPaths: string[];
+    fileSizes: { [path: string]: number };
+  }> {
+    if (!imageUrls || imageUrls.length === 0) {
+      return { cdnUrls: [], localPaths: [], fileSizes: {} };
+    }
+
+    try {
+      const results = await this.imageProcessor.processEpisodeImages(imageUrls, seriesId, episodeId);
+      
+      const localPaths: string[] = [];
+      const fileSizes: { [path: string]: number } = {};
+
+      results.forEach((result) => {
+        if (result.processed && result.localPath) {
+          localPaths.push(result.localPath);
+          fileSizes[result.localPath] = result.fileSize;
+        }
+      });
+
+      return {
+        cdnUrls: imageUrls,
+        localPaths,
+        fileSizes
+      };
+    } catch (error) {
+      console.error(`Failed to process episode images for ${seriesId}/${episodeId}:`, error);
+    }
+
+    // Return CDN URLs as fallback
+    return { 
+      cdnUrls: imageUrls, 
+      localPaths: [], 
+      fileSizes: {} 
+    };
   }
 
   // Abstract methods to be implemented by theme managers

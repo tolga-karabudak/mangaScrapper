@@ -17,7 +17,10 @@ export const series = pgTable('series', {
   id: varchar('id', { length: 255 }).primaryKey(),
   name: varchar('name', { length: 500 }).notNull(),
   description: text('description'),
-  cover: varchar('cover', { length: 1000 }),
+  cover: varchar('cover', { length: 1000 }), // CDN URL
+  localCoverPath: varchar('local_cover_path', { length: 500 }), // Local file path
+  coverFileSize: integer('cover_file_size'), // File size in bytes
+  coverProcessedAt: timestamp('cover_processed_at'), // When processed
   url: varchar('url', { length: 1000 }).notNull(),
   sourceId: varchar('source_id', { length: 255 }).references(() => sources.id),
   lastUpdated: timestamp('last_updated').defaultNow(),
@@ -30,7 +33,10 @@ export const episodes = pgTable('episodes', {
   name: varchar('name', { length: 500 }).notNull(),
   number: integer('number').notNull(),
   url: varchar('url', { length: 1000 }).notNull(),
-  images: jsonb('images').default([]),
+  images: jsonb('images').default([]), // CDN URLs array
+  localImagesPath: jsonb('local_images_path').default([]), // Local file paths array
+  imagesFileSizes: jsonb('images_file_sizes').default({}), // Path -> size mapping
+  imagesProcessedAt: timestamp('images_processed_at'), // When processed
   publishedAt: timestamp('published_at').defaultNow(),
   createdAt: timestamp('created_at').defaultNow()
 });

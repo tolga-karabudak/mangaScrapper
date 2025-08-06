@@ -1,3 +1,4 @@
+// src/managers/UzayManager.ts - Updated with image processing and local storage
 import { BaseManager } from './base/BaseManager';
 import type { MangaSeries } from '../types';
 
@@ -38,66 +39,99 @@ export class UzayManager extends BaseManager {
 
     const name = document.querySelector('h1')?.textContent?.trim() || '';
     const description = document.querySelector('.summary p')?.textContent?.trim() || '';
-    const cover = document.querySelector('.content-info img')?.getAttribute('src') || '';
+    const coverUrl = document.querySelector('.content-info img')?.getAttribute('src') || '';
     const id = url.split('/manga/')[1]?.split('/')[0] || this.generateId(url);
+
+    // Process cover image
+    const coverResult = await this.processSeriesCover(coverUrl, id);
 
     // Get episodes
     const episodeElements = Array.from(document.querySelectorAll('.list-episode a'));
-    const episodes = episodeElements.map(element => {
+    const episodes: MangaSeries['episodes'] = [];
+
+    for (const element of episodeElements) {
       const episodeName = element.querySelector('.chapternum b')?.textContent?.trim() || '';
       const episodeUrl = this.remapHref(element.getAttribute('href') || '');
       const number = this.extractEpisodeNumber(episodeName);
 
-      return {
-        id: this.generateEpisodeId(episodeUrl),
-        seriesId: id,
-        name: episodeName,
-        number,
-        url: episodeUrl,
-        images: [],
-        publishedAt: new Date()
-      };
-    }).filter(ep => ep.number >= 0).reverse();
+      if (number >= 0 && episodeUrl) {
+        // Get episode images
+        const imageUrls = await this.getEpisodeImages(episodeUrl);
+        
+        // Process episode images
+        const episodeId = this.generateEpisodeId(episodeUrl);
+        const imageResult = await this.processEpisodeImages(imageUrls, id, episodeId);
+
+        episodes.push({
+          id: episodeId,
+          seriesId: id,
+          name: episodeName,
+          number,
+          url: episodeUrl,
+          images: imageResult.cdnUrls,
+          localImagesPath: imageResult.localPaths,
+          imagesFileSizes: imageResult.fileSizes,
+          imagesProcessedAt: imageResult.localPaths.length > 0 ? new Date() : undefined,
+          publishedAt: new Date()
+        });
+      }
+    }
 
     return {
       id,
       name,
       description,
-      cover,
+      cover: coverResult.cdnUrl,
+      localCoverPath: coverResult.localPath,
+      coverFileSize: coverResult.fileSize,
+      coverProcessedAt: coverResult.localPath ? new Date() : undefined,
       url,
       sourceId: this.source.id,
-      episodes,
+      episodes: episodes.reverse(),
       lastUpdated: new Date()
     };
   }
 
   async getEpisodeImages(episodeUrl: string): Promise<string[]> {
-    const html = await this.fetchPage(episodeUrl);
-    const document = this.parseHTML(html);
-
-    const scripts = Array.from(document.querySelectorAll('script'));
-    const targetScript = scripts.find(script => 
-      script.textContent?.includes('series_items')
-    )?.textContent?.replaceAll('\\"', '"');
-
-    if (!targetScript) return [];
-
-    const regex = /(?<=series_items":\[).*?(?=])/g;
-    const match = targetScript.match(regex);
-    
-    if (!match) return [];
-
     try {
+      const html = await this.fetchPage(episodeUrl);
+      const document = this.parseHTML(html);
+
+      const scripts = Array.from(document.querySelectorAll('script'));
+      const targetScript = scripts.find(script => 
+        script.textContent?.includes('series_items')
+      )?.textContent?.replaceAll('\\"', '"');
+
+      if (!targetScript) {
+        console.warn(`No series_items script found for: ${episodeUrl}`);
+        return [];
+      }
+
+      const regex = /(?<=series_items":\[).*?(?=])/g;
+      const match = targetScript.match(regex);
+      
+      if (!match) {
+        console.warn(`No series_items data found for: ${episodeUrl}`);
+        return [];
+      }
+
       const sources = JSON.parse("[" + match[0] + "]");
       
-      if (sources.length < 2) return [];
+      if (sources.length < 2) {
+        console.warn(`Insufficient images found for: ${episodeUrl}`);
+        return [];
+      }
 
-      return sources.map((source: any) => {
+      const images = sources.map((source: any) => {
         if (typeof source === 'string') return source;
         if (source.path?.includes('https://')) return source.path;
         return `https://cdn1.uzaymanga.com/upload/series/${source.path}`;
-      });
-    } catch {
+      }).filter((url: string) => url && url.length > 0);
+
+      console.log(`📖 Found ${images.length} images for episode (Uzay theme)`);
+      return images;
+    } catch (error) {
+      console.error(`Failed to get episode images for ${episodeUrl}:`, error);
       return [];
     }
   }
